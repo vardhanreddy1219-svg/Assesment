@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    ports:
+      - "8000:8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - STREAM_NAME=pdf_jobs
+      - STREAM_GROUP=pdf_group
+      - GEMINI_MODEL_ID=gemini-2.0-flash
+      - MAX_UPLOAD_MB=25
+      - KEEP_TMP_FILES=false
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/app/backend:ro
+      - /tmp:/tmp
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.worker
+    depends_on:
+      redis:
+        condition: service_healthy
+    environment:
+      - REDIS_URL=redis://redis:6379/0
+      - STREAM_NAME=pdf_jobs
+      - STREAM_GROUP=pdf_group
+      - GEMINI_MODEL_ID=gemini-2.0-flash
+      - MAX_UPLOAD_MB=25
+      - KEEP_TMP_FILES=false
+    env_file:
+      - .env
+    volumes:
+      - ./backend:/app/backend:ro
+      - /tmp:/tmp
+    restart: unless-stopped
+    deploy:
+      replicas: 2
+
+volumes:
+  redis_data:
